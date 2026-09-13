@@ -51,6 +51,9 @@ www.{$SOTTO_DOMAIN} {
 				request>headers>Authorization delete
 				request>headers>Proxy-Authorization delete
 				resp_headers>Set-Cookie delete
+				# Not a credential header, and Caddy's default redaction never touches it: the OAuth
+				# callback's redirect to a CLI login carries the new session token in its query.
+				resp_headers>Location delete
 			}
 		}
 	}

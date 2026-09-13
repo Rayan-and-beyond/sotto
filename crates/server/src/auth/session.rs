@@ -31,16 +31,27 @@ pub struct AuthUser {
 
 /// Issue a fresh session for `user_id` and return the raw bearer token (shown to the client once).
 pub async fn issue(pool: &PgPool, user_id: &str) -> Result<String> {
+    issue_inner(pool, user_id, false).await
+}
+
+/// Issue a session through the legacy CLI branch (token in the redirect URL) and mark it so,
+/// so the branch's remaining use is one query away when planning its removal.
+pub async fn issue_legacy_cli(pool: &PgPool, user_id: &str) -> Result<String> {
+    issue_inner(pool, user_id, true).await
+}
+
+async fn issue_inner(pool: &PgPool, user_id: &str, via_legacy_cli: bool) -> Result<String> {
     let mut raw = [0u8; TOKEN_BYTES];
     dryoc::rng::copy_randombytes(&mut raw);
     let token = format!("{TOKEN_PREFIX}{}", to_hex(&raw));
 
     sqlx::query(&format!(
-        "INSERT INTO sessions (token_hash, user_id, expires_at) \
-         VALUES ($1, $2, now() + interval '{SESSION_TTL}')"
+        "INSERT INTO sessions (token_hash, user_id, expires_at, via_legacy_cli) \
+         VALUES ($1, $2, now() + interval '{SESSION_TTL}', $3)"
     ))
     .bind(hash_token(&token))
     .bind(user_id)
+    .bind(via_legacy_cli)
     .execute(pool)
     .await?;
 

@@ -73,6 +73,15 @@ fn get(uri: &str) -> Request<Body> {
         .expect("request")
 }
 
+fn post_json(uri: &str, body: &str) -> Request<Body> {
+    Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("request")
+}
+
 async fn body_text(resp: axum::response::Response) -> String {
     let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
         .await
@@ -202,6 +211,13 @@ async fn callback_upserts_user_and_mints_session() {
         .await
         .expect("session count");
     assert_eq!(sessions, 1);
+    // The seed carries no mode, so this is the legacy branch: session minted eagerly and marked.
+    let legacy: bool = sqlx::query_scalar("SELECT via_legacy_cli FROM sessions WHERE user_id = $1")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("legacy flag");
+    assert!(legacy, "untagged logins take the legacy branch");
 
     // The login state is single-use: it was consumed by the callback.
     let leftover: i64 = sqlx::query_scalar("SELECT count(*) FROM oauth_logins WHERE state = $1")
@@ -406,6 +422,304 @@ async fn web_callback_sets_a_cookie_and_omits_the_token_from_the_url() {
     assert!(location.contains("state=web-cli-state"));
     // The session token must NOT be in the redirect URL for the web flow.
     assert!(!location.contains("session="));
+
+    sqlx::query("DELETE FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1")
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .expect("clean");
+}
+
+#[tokio::test]
+async fn login_records_code_mode_and_rejects_unknown_modes() {
+    let Some(pool) = pool_or_skip().await else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let cli_state = "test-mode-cli-state";
+    sqlx::query("DELETE FROM oauth_logins WHERE cli_state = $1")
+        .bind(cli_state)
+        .execute(&pool)
+        .await
+        .expect("pre-clean");
+
+    let resp = app(pool.clone(), identity("1", None))
+        .oneshot(get(&format!(
+            "/auth/github/login?redirect_uri=http://127.0.0.1:51998/cb&state={cli_state}&mode=code"
+        )))
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let wants_code: bool =
+        sqlx::query_scalar("SELECT wants_code FROM oauth_logins WHERE cli_state = $1")
+            .bind(cli_state)
+            .fetch_one(&pool)
+            .await
+            .expect("wants_code");
+    assert!(wants_code, "mode=code is recorded on the login row");
+
+    // An unknown mode fails closed rather than silently taking a branch.
+    let resp = app(pool.clone(), identity("1", None))
+        .oneshot(get(
+            "/auth/github/login?redirect_uri=http://127.0.0.1:51998/cb&state=x&mode=weird",
+        ))
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    sqlx::query("DELETE FROM oauth_logins WHERE cli_state = $1")
+        .bind(cli_state)
+        .execute(&pool)
+        .await
+        .expect("clean");
+}
+
+#[tokio::test]
+async fn callback_with_code_mode_returns_a_code_not_a_session() {
+    let Some(pool) = pool_or_skip().await else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let subject = "test-code-subject";
+    let state = "test-code-state";
+    sqlx::query("DELETE FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1")
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .expect("pre-clean user");
+    sqlx::query("DELETE FROM oauth_logins WHERE state = $1")
+        .bind(state)
+        .execute(&pool)
+        .await
+        .expect("pre-clean login");
+    sqlx::query(
+        "INSERT INTO oauth_logins (state, cli_redirect_uri, cli_state, wants_code) \
+         VALUES ($1, $2, $3, TRUE)",
+    )
+    .bind(state)
+    .bind("http://127.0.0.1:52002/cb")
+    .bind("cb-code-cli")
+    .execute(&pool)
+    .await
+    .expect("seed login");
+
+    let app = app(pool.clone(), identity(subject, None));
+    let resp = app
+        .oneshot(get(&format!(
+            "/auth/github/callback?code=any-code&state={state}"
+        )))
+        .await
+        .expect("oneshot");
+
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let location = resp
+        .headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .expect("location header")
+        .to_string();
+    assert!(location.starts_with("http://127.0.0.1:52002/cb?"));
+    assert!(location.contains("code=sc_"), "code branch: {location}");
+    assert!(location.contains("state=cb-code-cli"));
+    // The session token must appear in NEITHER the headers NOR the body: that is the finding.
+    assert!(
+        !location.contains("st_"),
+        "no token in Location: {location}"
+    );
+    assert!(
+        !body_text(resp).await.contains("st_"),
+        "no token in the callback body"
+    );
+
+    let user_id: String = sqlx::query_scalar(
+        "SELECT id FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1",
+    )
+    .bind(subject)
+    .fetch_one(&pool)
+    .await
+    .expect("user exists");
+    // Lazy issuance: the callback mints the code row, not a session.
+    let sessions: i64 = sqlx::query_scalar("SELECT count(*) FROM sessions WHERE user_id = $1")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("session count");
+    assert_eq!(sessions, 0, "no session until exchange");
+    let codes: i64 = sqlx::query_scalar("SELECT count(*) FROM cli_login_codes WHERE user_id = $1")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("code count");
+    assert_eq!(codes, 1);
+
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(&user_id)
+        .execute(&pool)
+        .await
+        .expect("clean");
+}
+
+/// Run the login→callback pair through the public endpoints and return the loopback
+/// `Location` carrying the code, so the mode plumbing is exercised, not bypassed.
+async fn callback_location(pool: &PgPool, subject: &str, cli_state: &str, port: u16) -> String {
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(get(&format!(
+            "/auth/github/login?redirect_uri=http://127.0.0.1:{port}/cb&state={cli_state}&mode=code"
+        )))
+        .await
+        .expect("login");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    let server_state: String = sqlx::query_scalar(
+        "SELECT state FROM oauth_logins WHERE cli_state = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(cli_state)
+    .fetch_one(pool)
+    .await
+    .expect("login row");
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(get(&format!(
+            "/auth/github/callback?code=any-code&state={server_state}"
+        )))
+        .await
+        .expect("callback");
+    assert_eq!(resp.status(), StatusCode::SEE_OTHER);
+    resp.headers()
+        .get("location")
+        .and_then(|v| v.to_str().ok())
+        .expect("location header")
+        .to_string()
+}
+
+fn code_from_location(location: &str) -> &str {
+    let after = location.split("code=").nth(1).expect("code param");
+    after.split('&').next().expect("code value")
+}
+
+#[tokio::test]
+async fn exchange_swaps_a_live_code_for_a_session_exactly_once() {
+    let Some(pool) = pool_or_skip().await else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let subject = "test-exchange-subject";
+    sqlx::query("DELETE FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1")
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .expect("pre-clean user");
+    sqlx::query("DELETE FROM oauth_logins WHERE cli_state = $1")
+        .bind("ex-cli-a")
+        .execute(&pool)
+        .await
+        .expect("pre-clean login");
+
+    // A wrong state fails without consuming the code.
+    let location_a = callback_location(&pool, subject, "ex-cli-a", 52003).await;
+    let code_a = code_from_location(&location_a).to_string();
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(post_json(
+            "/auth/github/exchange",
+            &format!(r#"{{"code":"{code_a}","state":"wrong-state"}}"#),
+        ))
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    // The untouched code still exchanges: session minted, usable, not legacy-marked.
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(post_json(
+            "/auth/github/exchange",
+            &format!(r#"{{"code":"{code_a}","state":"ex-cli-a"}}"#),
+        ))
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body = body_text(resp).await;
+    assert!(body.contains("\"token\":\"st_"), "token in body: {body}");
+    let token = body
+        .split("\"token\":\"")
+        .nth(1)
+        .and_then(|s| s.split('"').next())
+        .expect("token value")
+        .to_string();
+    let authed = Request::builder()
+        .uri("/auth/me")
+        .header("authorization", format!("Bearer {token}"))
+        .body(Body::empty())
+        .expect("req");
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(authed)
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::OK);
+    let user_id: String = sqlx::query_scalar(
+        "SELECT id FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1",
+    )
+    .bind(subject)
+    .fetch_one(&pool)
+    .await
+    .expect("user exists");
+    let legacy: bool = sqlx::query_scalar("SELECT via_legacy_cli FROM sessions WHERE user_id = $1")
+        .bind(&user_id)
+        .fetch_one(&pool)
+        .await
+        .expect("legacy flag");
+    assert!(!legacy, "exchanged sessions are not legacy-marked");
+
+    // Single-use: the same code is dead now, and so is a code that never existed.
+    for (code, st) in [(code_a.as_str(), "ex-cli-a"), ("sc_nope", "ex-cli-a")] {
+        let resp = app(pool.clone(), identity(subject, None))
+            .oneshot(post_json(
+                "/auth/github/exchange",
+                &format!(r#"{{"code":"{code}","state":"{st}"}}"#),
+            ))
+            .await
+            .expect("oneshot");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(&user_id)
+        .execute(&pool)
+        .await
+        .expect("clean");
+}
+
+#[tokio::test]
+async fn exchange_rejects_an_expired_code() {
+    let Some(pool) = pool_or_skip().await else {
+        eprintln!("skipping: DATABASE_URL not set");
+        return;
+    };
+    let subject = "test-expired-subject";
+    sqlx::query("DELETE FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1")
+        .bind(subject)
+        .execute(&pool)
+        .await
+        .expect("pre-clean user");
+    sqlx::query("DELETE FROM oauth_logins WHERE cli_state = $1")
+        .bind("ex-cli-c")
+        .execute(&pool)
+        .await
+        .expect("pre-clean login");
+
+    let location = callback_location(&pool, subject, "ex-cli-c", 52004).await;
+    let code = code_from_location(&location).to_string();
+    sqlx::query(
+        "UPDATE cli_login_codes SET expires_at = now() - interval '1 second' WHERE cli_state = $1",
+    )
+    .bind("ex-cli-c")
+    .execute(&pool)
+    .await
+    .expect("expire the code");
+    let resp = app(pool.clone(), identity(subject, None))
+        .oneshot(post_json(
+            "/auth/github/exchange",
+            &format!(r#"{{"code":"{code}","state":"ex-cli-c"}}"#),
+        ))
+        .await
+        .expect("oneshot");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
     sqlx::query("DELETE FROM users WHERE oauth_provider = 'github' AND oauth_subject = $1")
         .bind(subject)

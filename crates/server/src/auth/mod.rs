@@ -21,6 +21,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/auth/github/login", get(routes::login))
         .route("/auth/github/callback", get(routes::callback))
+        .route("/auth/github/exchange", post(routes::exchange))
         .route("/auth/me", get(routes::me))
         .route("/auth/logout", post(routes::logout))
 }

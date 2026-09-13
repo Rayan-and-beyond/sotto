@@ -932,7 +932,8 @@ tag. The full operator procedure, including the rehearsal record you must comple
    ```sh
    # Run where deploy/.env lives. Refuse a missing, empty, or duplicate assignment before `gh`
    # starts, so an ambiguous file cannot overwrite the repository secret with the wrong value.
-   count=$(grep -c '^SOTTO_ORGANISATION_DELETION_METRICS_TOKEN=' .env || true)
+   count=$(grep -c '^SOTTO_ORGANISATION_DELETION_METRICS_TOKEN=' .env 2>/dev/null || true)
+   count=${count:-0}
    if [ "$count" -ne 1 ]; then
      echo 'expected exactly one SOTTO_ORGANISATION_DELETION_METRICS_TOKEN assignment in .env' >&2
      exit 1

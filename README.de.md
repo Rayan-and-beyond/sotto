@@ -111,6 +111,8 @@ sotto run -- npm start       # inject the environment's secrets into any command
 sotto login && sotto push    # optional: sync ciphertext via the hosted instance (getsotto.co.uk)
 sotto get DATABASE_URL -c    # copy a secret without printing it; clipboard clears after 45s when unchanged
 sotto share DATABASE_URL     # one-time link; copied automatically in an interactive terminal
+sotto share DATABASE_URL --views 3
+sotto share DATABASE_URL --expire 3600   # lifetime in seconds
 ```
 
 Mit `--env` wählst du eine Umgebung für einen einzelnen Befehl aus, ohne die Standardumgebung des Projekts zu ändern:

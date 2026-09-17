@@ -80,9 +80,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: getsotto/sotto-action@543d1af56ac81d1f1511d88c3d269106e8513a28 # merged v1.1 implementation
+      - uses: getsotto/sotto-action@v1.1.0
         with:
-          sotto-version: v0.4.0
+          sotto-version: v0.5.0
       - run: sotto run -- npm test
         env:
           SOTTO_SERVER: ${{ vars.SOTTO_SERVER }}

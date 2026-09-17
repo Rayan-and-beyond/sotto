@@ -252,6 +252,9 @@ enum EnvCommand {
     /// Set the active environment for this project.
     Use { name: String },
     /// Compare two environments key by key (presence + "differs" markers).
+    #[command(
+        after_help = "Examples:\n  sotto env diff dev staging\n  sotto env diff dev staging --reveal\n\nMarkers:\n  =  key exists in both environments with the same value\n  !  key exists in both environments with different values\n  <  key exists only in the left (first) environment\n  >  key exists only in the right (second) environment\n\nValues are hidden by default. --reveal displays plaintext values for keys that differ in both environments."
+    )]
     Diff {
         left: String,
         right: String,

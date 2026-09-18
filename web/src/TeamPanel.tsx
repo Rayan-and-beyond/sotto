@@ -83,9 +83,11 @@ export function TeamPanel({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
   const [billingOutcome] = useState(parseBillingOutcome);
   const [deletionActive, setDeletionActive] = useState(false);
   const orgLoadGeneration = useRef(0);
+  const inviteInFlight = useRef(false);
 
   useEffect(() => {
     if (billingOutcome !== null) {
@@ -141,10 +143,15 @@ export function TeamPanel({
   }
 
   async function invite(no: NamedOrg) {
+    if (inviteInFlight.current) return;
+    const submittedEmail = email.trim();
+    if (submittedEmail === "") return;
     setError(null);
     setNotice(null);
+    inviteInFlight.current = true;
+    setInviteBusy(true);
     try {
-      const invited = await inviteMember(no.org.id, email.trim());
+      const invited = await inviteMember(no.org.id, submittedEmail);
       // Grant the invitee the org key so display names decrypt for them (best-effort: needs their
       // public key on file and our own org-key copy). A failure here - e.g. our copy is sealed to an
       // old keypair after a reset, or the server rejects the grant - must not fail the invite, which
@@ -157,11 +164,14 @@ export function TeamPanel({
           // Best-effort only.
         }
       }
-      setNotice(`invited ${email.trim()} (${invited.userId})`);
+      setNotice(`invited ${submittedEmail} (${invited.userId})`);
       setEmail("");
       setMembers(await fetchMembers(no.org.id));
     } catch (e) {
       setError(message(e));
+    } finally {
+      inviteInFlight.current = false;
+      setInviteBusy(false);
     }
   }
 
@@ -293,10 +303,11 @@ export function TeamPanel({
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="teammate@example.com"
+                  disabled={inviteBusy}
                 />
               </label>
-              <button type="submit" disabled={email.trim() === ""}>
-                Invite
+              <button type="submit" disabled={inviteBusy || email.trim() === ""}>
+                {inviteBusy ? "Inviting…" : "Invite"}
               </button>
             </form>
           )}

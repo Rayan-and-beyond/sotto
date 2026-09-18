@@ -149,3 +149,63 @@ describe("TeamPanel organisation loading", () => {
     expect(api.fetchEntitlements).toHaveBeenCalledWith("org-b");
   });
 });
+
+describe("TeamPanel invitations", () => {
+  const adminOrg: Org = {
+    id: "org-a",
+    encName: new Uint8Array(),
+    role: "admin",
+    encOrgKey: null,
+  };
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    vi.mocked(api.fetchOrgs).mockResolvedValue([adminOrg]);
+    vi.mocked(api.fetchMembers).mockResolvedValue([]);
+    vi.mocked(api.fetchEntitlements).mockResolvedValue(freePlan);
+  });
+
+  async function openInviteForm() {
+    render(<TeamPanel master={new Uint8Array(32)} encPrivateKeys={new Uint8Array([1])} />);
+    fireEvent.click(await screen.findByRole("button", { name: /org-a/ }));
+    return screen.findByRole("textbox", { name: "Invite by email" });
+  }
+
+  it("locks the form while an invitation is pending and uses the submitted email on success", async () => {
+    const pending = deferred<{ userId: string; publicKey: Uint8Array | null }>();
+    vi.mocked(api.inviteMember).mockReturnValue(pending.promise);
+    const input = await openInviteForm();
+    fireEvent.change(input, { target: { value: "  teammate@example.com  " } });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(input).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Inviting…" })).toBeDisabled();
+    fireEvent.submit(input.closest("form")!);
+    expect(api.inviteMember).toHaveBeenCalledOnce();
+    expect(api.inviteMember).toHaveBeenCalledWith("org-a", "teammate@example.com");
+
+    await act(async () => {
+      pending.resolve({ userId: "user-b", publicKey: null });
+    });
+    expect(screen.getByText("invited teammate@example.com (user-b)")).toBeInTheDocument();
+    expect(input).toHaveValue("");
+    expect(input).not.toBeDisabled();
+    expect(api.fetchMembers).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves the email and restores the form after an invitation failure", async () => {
+    const pending = deferred<{ userId: string; publicKey: Uint8Array | null }>();
+    vi.mocked(api.inviteMember).mockReturnValue(pending.promise);
+    const input = await openInviteForm();
+    fireEvent.change(input, { target: { value: "retry@example.com" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await act(async () => {
+      pending.reject(new Error("invite unavailable"));
+    });
+    expect(screen.getByRole("alert")).toHaveTextContent("invite unavailable");
+    expect(input).toHaveValue("retry@example.com");
+    expect(input).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Invite" })).toBeEnabled();
+  });
+});

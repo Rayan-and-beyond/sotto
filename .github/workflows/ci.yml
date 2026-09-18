@@ -82,13 +82,29 @@ jobs:
         continue-on-error: true
       - name: Verify missing version is rejected (Linux/macOS)
         if: always() && runner.os != 'Windows'
-        run: test "${{ steps.missing-version.outcome }}" = failure
+        env:
+          MISSING_VERSION_OUTCOME: ${{ steps.missing-version.outcome }}
+        run: |
+          case "$MISSING_VERSION_OUTCOME" in
+            failure) ;;
+            success) echo "missing sotto-version was accepted" >&2; exit 1 ;;
+            skipped|cancelled) echo "missing-version action did not run ($MISSING_VERSION_OUTCOME)" ;;
+            *) echo "unexpected missing-version outcome: $MISSING_VERSION_OUTCOME" >&2; exit 1 ;;
+          esac
       - name: Verify missing version is rejected (Windows)
         if: always() && runner.os == 'Windows'
         shell: pwsh
+        env:
+          MISSING_VERSION_OUTCOME: ${{ steps.missing-version.outcome }}
         run: |
-          if ('${{ steps.missing-version.outcome }}' -ne 'failure') {
-            throw "missing sotto-version was accepted"
+          switch ($env:MISSING_VERSION_OUTCOME) {
+            'failure' { break }
+            'success' { throw "missing sotto-version was accepted" }
+            { $_ -in 'skipped', 'cancelled' } {
+              Write-Host "missing-version action did not run ($_)"
+              break
+            }
+            default { throw "unexpected missing-version outcome: $env:MISSING_VERSION_OUTCOME" }
           }
       - name: Verify installed release (Linux/macOS)
         if: runner.os != 'Windows'

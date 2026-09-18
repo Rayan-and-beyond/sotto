@@ -111,7 +111,11 @@ sotto run -- npm start       # inject the environment's secrets into any command
 sotto login && sotto push    # optional: sync ciphertext via the hosted instance (getsotto.co.uk)
 sotto get DATABASE_URL -c    # copy a secret without printing it; clipboard clears after 45s when unchanged
 sotto share DATABASE_URL     # one-time link; copied automatically in an interactive terminal
+sotto share DATABASE_URL --views 3
+sotto share DATABASE_URL --expire 3600   # lifetime in seconds
 ```
+
+Por padrão, um compartilhamento permite uma visualização e não expira; o link deixa de funcionar após a última visualização.
 
 Use `--env` para selecionar um ambiente para um único comando sem alterar o padrão do projeto:
 
@@ -141,6 +145,48 @@ sotto org invite <org-id> dev@example.com  # invite an existing Sotto user
 sotto grant <user-id>                      # share the active environment (they run `sotto clone`)
 sotto token create --name ci               # SOTTO_TOKEN: run/export in CI, no password needed
 ```
+
+### Temas de saída
+
+A CLI traz cinco temas integrados: `nord` (o padrão), `sordino`, `terminal`, `monochrome` e
+`tokyo-night`. Gerencie-os com `sotto theme`:
+
+```sh
+sotto theme ls        # list available themes; the active one is marked
+sotto theme set nord  # save a preference for later commands
+sotto theme current   # print the theme this shell resolves to
+```
+
+`--theme <name>` escolhe um tema para um único comando. `SOTTO_THEME` o define para um shell, e
+`sotto theme set` o salva. A precedência é `--theme`, depois `SOTTO_THEME`, depois a preferência
+salva, depois `nord`; um nome desconhecido avisa na saída de erro padrão e volta para `nord`.
+
+O estilo só se aplica a terminais interativos. `--plain`, um `NO_COLOR` não vazio (o contrato do
+[no-color.org](https://no-color.org)), ambientes de CI, a saída padrão em um pipe e a entrada
+padrão redirecionada suprimem cada um a cor e a decoração, mas mantêm a paleta escolhida, então
+scripts e registros ficam em texto simples.
+
+Temas personalizados são arquivos TOML no diretório `themes` dentro do diretório de dados da sua
+plataforma: `~/Library/Application Support/sotto` no macOS, `%APPDATA%\sotto` no Windows e
+`$XDG_DATA_HOME/sotto` ou `~/.local/share/sotto` no Linux (`SOTTO_DATA_DIR` muda esse
+diretório). Cada arquivo `*.toml` precisa dos tokens abaixo e usa como nome o campo `name`, ou o
+nome do arquivo quando esse campo não existe; um arquivo que não puder ser interpretado é
+ignorado. As cores aceitam valores hexadecimais, nomes de cores ANSI, índices `ansi(<index>)` e
+`default`.
+
+```toml
+bg = "#120024"
+fg = "#ffffff"
+accent = "#ff007f"
+success = "#00ff66"
+warning = "#ffaa00"
+error = "#ff0033"
+muted = "#775588"
+border = "#331144"
+```
+
+Salvo como `synth.toml`, esse arquivo adiciona um tema `synth`. Aplique-o com
+`sotto theme set synth`, ou para um único comando com `sotto --theme synth <command>`.
 
 ### Outro dispositivo
 

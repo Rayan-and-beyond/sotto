@@ -74,6 +74,7 @@ async fn clean_abandoned_fixtures(pool: &PgPool) {
 
 fn state_with_retention(pool: PgPool, retention_days: i64) -> AppState {
     AppState {
+        deployment_mode: sotto_server::config::DeploymentMode::SelfHosted,
         telemetry_ingest: false,
         pool,
         oauth: None,

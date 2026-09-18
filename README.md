@@ -108,7 +108,11 @@ sotto run -- npm start       # inject the environment's secrets into any command
 sotto login && sotto push    # optional: sync ciphertext via the hosted instance (getsotto.co.uk)
 sotto get DATABASE_URL -c    # copy a secret without printing it; clipboard clears after 45s when unchanged
 sotto share DATABASE_URL     # one-time link; copied automatically in an interactive terminal
+sotto share DATABASE_URL --views 3
+sotto share DATABASE_URL --expire 3600   # lifetime in seconds
 ```
+
+By default, a share allows one view and has no expiry; the link burns after the last view.
 
 Use `--env` to select an environment for one command without changing the project's default:
 
@@ -138,6 +142,47 @@ sotto org invite <org-id> dev@example.com  # invite an existing Sotto user
 sotto grant <user-id>                      # share the active environment (they run `sotto clone`)
 sotto token create --name ci               # SOTTO_TOKEN: run/export in CI, no password needed
 ```
+
+### Output themes
+
+The CLI ships five built-in themes: `nord` (the default), `sordino`, `terminal`, `monochrome`,
+and `tokyo-night`. Manage them with `sotto theme`:
+
+```sh
+sotto theme ls        # list available themes; the active one is marked
+sotto theme set nord  # save a preference for later commands
+sotto theme current   # print the theme this shell resolves to
+```
+
+`--theme <name>` picks a theme for one command. `SOTTO_THEME` sets it for a shell, and
+`sotto theme set` saves it. Precedence is `--theme`, then `SOTTO_THEME`, then the saved
+preference, then `nord`; an unknown name warns on standard error and falls back to `nord`.
+
+Styling applies to interactive terminals only. `--plain`, a non-empty `NO_COLOR` (the
+[no-color.org](https://no-color.org) contract), CI environments, piped standard output, and
+redirected standard input each suppress colour and decoration while keeping the selected
+palette, so scripts and logs read plain text.
+
+Custom themes are TOML files in the `themes` directory inside your platform data directory:
+`~/Library/Application Support/sotto` on macOS, `%APPDATA%\sotto` on Windows, and
+`$XDG_DATA_HOME/sotto` or `~/.local/share/sotto` on Linux (`SOTTO_DATA_DIR` moves that
+directory). Each `*.toml` file needs the tokens below and takes its name from a `name` field,
+or from the filename when the field is absent; a file that fails to parse is skipped. Colours
+accept hex values, ANSI colour names, `ansi(<index>)` indices, and `default`.
+
+```toml
+bg = "#120024"
+fg = "#ffffff"
+accent = "#ff007f"
+success = "#00ff66"
+warning = "#ffaa00"
+error = "#ff0033"
+muted = "#775588"
+border = "#331144"
+```
+
+Saved as `synth.toml`, that file adds a `synth` theme. Apply it with `sotto theme set synth`,
+or for one command with `sotto --theme synth <command>`.
 
 ### Another device
 

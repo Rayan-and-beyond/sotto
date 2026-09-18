@@ -16,6 +16,7 @@ use sotto_server::state::AppState;
 
 fn app(pool: PgPool, token: Option<&str>) -> Router {
     let state = AppState {
+        deployment_mode: sotto_server::config::DeploymentMode::SelfHosted,
         pool,
         oauth: None,
         oauth_config: None,

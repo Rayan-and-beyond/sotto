@@ -78,6 +78,7 @@ async fn run() -> Result<()> {
 
     let state = AppState {
         pool: pool.clone(),
+        deployment_mode: config.deployment_mode,
         oauth,
         oauth_config: config.oauth.clone(),
         billing,
@@ -89,6 +90,8 @@ async fn run() -> Result<()> {
         organisation_deletion_metrics_token: config.organisation_deletion_metrics_token,
         organisation_deletion_operator_token: config.organisation_deletion_operator_token,
     };
+
+    println!("deployment mode: {}", config.deployment_mode.as_str());
 
     // Default-on telemetry must never be a surprise: say so at boot, with the off switch.
     if config.telemetry.ping_enabled && !config.telemetry.ingest_enabled {

@@ -40,6 +40,7 @@ async fn pool_or_skip() -> Option<PgPool> {
 
 fn app(pool: PgPool, identity: Identity) -> Router {
     let state = AppState {
+        deployment_mode: sotto_server::config::DeploymentMode::SelfHosted,
         telemetry_ingest: false,
         pool,
         oauth: Some(Arc::new(MockOAuth { identity }) as Arc<dyn OAuthProvider>),

@@ -55,6 +55,7 @@ fn unreachable_pool() -> PgPool {
 
 fn app(pool: PgPool) -> Router {
     let state = AppState {
+        deployment_mode: sotto_server::config::DeploymentMode::SelfHosted,
         pool,
         oauth: None,
         oauth_config: None,

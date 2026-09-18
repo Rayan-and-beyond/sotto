@@ -42,6 +42,9 @@ services:
       DATABASE_URL: postgres://sotto:${POSTGRES_PASSWORD}@postgres:5432/sotto
       SOTTO_PUBLIC_URL: https://${SOTTO_DOMAIN:?set SOTTO_DOMAIN in deploy/.env}
       SOTTO_WEB_ORIGIN: https://${SOTTO_DOMAIN}
+      # Deployment identity is explicit and independent of Stripe configuration. Keep this as
+      # self_hosted for customer-operated deployments; the operated Sotto service sets cloud.
+      SOTTO_DEPLOYMENT_MODE: ${SOTTO_DEPLOYMENT_MODE:-self_hosted}
       # Optional: without these the server still boots (health + migrations), but login and every
       # authenticated endpoint return 503. Fill them in for a usable instance.
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}

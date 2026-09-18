@@ -45,6 +45,7 @@ pub mod org_deletion_worker;
 pub mod org_deletion_metrics;
 #[doc(hidden)]
 pub mod org_deletion_ops;
+pub mod server_info;
 pub mod share;
 pub mod state;
 pub mod sync;
@@ -80,6 +81,7 @@ pub fn app(state: AppState) -> Router {
         .merge(machine::router())
         .merge(sync::router())
         .merge(share::router())
+        .merge(server_info::router())
         .merge(community::router())
         .merge(telemetry::router())
         .merge(org_deletion_metrics::router())

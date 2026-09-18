@@ -23,6 +23,8 @@ use crate::state::AppState;
 pub const FREE_MAX_MEMBERS: i64 = 3;
 /// Free-tier quota: projects per organisation.
 pub const FREE_MAX_ORG_PROJECTS: i64 = 1;
+/// Stable discovery identifier for the entitlement policy currently enforced by this module.
+pub const ENTITLEMENT_MODEL: &str = "organisation_tiers_v1";
 
 pub fn router() -> Router<AppState> {
     Router::new().route("/orgs/{org_id}/entitlements", get(get_entitlements))

@@ -2,6 +2,46 @@
 
 use crate::error::{Error, Result};
 
+/// Identifies who operates this server. This is deployment metadata, not an entitlement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeploymentMode {
+    SelfHosted,
+    Cloud,
+}
+
+impl DeploymentMode {
+    pub const ENV: &'static str = "SOTTO_DEPLOYMENT_MODE";
+
+    fn from_env_result(value: std::result::Result<String, std::env::VarError>) -> Result<Self> {
+        match value {
+            Ok(value) => Self::parse(Some(&value)),
+            Err(std::env::VarError::NotPresent) => Self::parse(None),
+            Err(std::env::VarError::NotUnicode(_)) => Err(Error::Config(format!(
+                "{} must be valid UTF-8 and either self_hosted or cloud",
+                Self::ENV
+            ))),
+        }
+    }
+
+    fn parse(value: Option<&str>) -> Result<Self> {
+        match value.map(str::trim).filter(|value| !value.is_empty()) {
+            None | Some("self_hosted") => Ok(Self::SelfHosted),
+            Some("cloud") => Ok(Self::Cloud),
+            Some(value) => Err(Error::Config(format!(
+                "{} must be either self_hosted or cloud, got {value:?}",
+                Self::ENV
+            ))),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::SelfHosted => "self_hosted",
+            Self::Cloud => "cloud",
+        }
+    }
+}
+
 /// Default address the server binds to when `SOTTO_BIND` is unset.
 const DEFAULT_BIND: &str = "127.0.0.1:8080";
 /// Default public base URL used to build the OAuth callback when `SOTTO_PUBLIC_URL` is unset.
@@ -24,6 +64,8 @@ pub struct Config {
     pub database_url: String,
     /// Address to bind the HTTP listener to.
     pub bind_addr: String,
+    /// Whether this server is operated by Sotto or by a self-hosting customer.
+    pub deployment_mode: DeploymentMode,
     /// GitHub OAuth configuration, present only when credentials are set in the environment.
     pub oauth: Option<OAuthConfig>,
     /// Stripe billing configuration, present only when the `STRIPE_*` variables are set.
@@ -113,6 +155,7 @@ impl Config {
         let database_url = std::env::var("DATABASE_URL")
             .map_err(|_| Error::Config("DATABASE_URL is not set".into()))?;
         let bind_addr = std::env::var("SOTTO_BIND").unwrap_or_else(|_| DEFAULT_BIND.to_string());
+        let deployment_mode = DeploymentMode::from_env_result(std::env::var(DeploymentMode::ENV))?;
         let public_base_url =
             env_nonempty("SOTTO_PUBLIC_URL").unwrap_or_else(|| DEFAULT_PUBLIC_URL.to_string());
         let web_origin = env_nonempty("SOTTO_WEB_ORIGIN");
@@ -165,6 +208,7 @@ impl Config {
         Ok(Self {
             database_url,
             bind_addr,
+            deployment_mode,
             oauth,
             billing,
             telemetry,
@@ -262,9 +306,40 @@ mod tests {
     use super::{
         billing_return_url, organisation_deletion_retention_from_env_result,
         organisation_deletion_worker_is_enabled, parse_organisation_deletion_retention_days,
-        telemetry_ping_enabled, DEFAULT_ORGANISATION_DELETION_RETENTION_DAYS,
+        telemetry_ping_enabled, DeploymentMode, DEFAULT_ORGANISATION_DELETION_RETENTION_DAYS,
         MAX_ORGANISATION_DELETION_RETENTION_DAYS,
     };
+
+    #[test]
+    fn deployment_mode_defaults_to_self_hosted_and_rejects_typos() {
+        assert_eq!(
+            DeploymentMode::parse(None).unwrap(),
+            DeploymentMode::SelfHosted
+        );
+        assert_eq!(
+            DeploymentMode::parse(Some("self_hosted")).unwrap(),
+            DeploymentMode::SelfHosted
+        );
+        assert_eq!(
+            DeploymentMode::parse(Some(" cloud ")).unwrap(),
+            DeploymentMode::Cloud
+        );
+        assert!(DeploymentMode::parse(Some("hosted")).is_err());
+        assert!(DeploymentMode::parse(Some("SELF_HOSTED")).is_err());
+
+        #[cfg(unix)]
+        {
+            use std::ffi::OsString;
+            use std::os::unix::ffi::OsStringExt;
+
+            assert!(
+                DeploymentMode::from_env_result(Err(std::env::VarError::NotUnicode(
+                    OsString::from_vec(vec![0xff])
+                )))
+                .is_err()
+            );
+        }
+    }
 
     #[test]
     fn billing_returns_to_the_web_origin_when_configured() {

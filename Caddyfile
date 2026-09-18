@@ -85,7 +85,7 @@ www.{$SOTTO_DOMAIN} {
 	# `crates/server/src/lib.rs` serve - keep the two in sync. Note that `path` matches exactly, so
 	# /health does not cover /health/ready: a new sub-path needs its own entry or it falls through
 	# to the SPA below and answers a probe with HTML.
-	@api path /health /auth/me /auth/logout /account /account/* /projects /projects/* /environments/* /orgs /orgs/* /machine/* /billing/* /ops/organisation-deletion/metrics /ops/organisation-deletion/*
+	@api path /health /server/info /auth/me /auth/logout /account /account/* /projects /projects/* /environments/* /orgs /orgs/* /machine/* /billing/* /ops/organisation-deletion/metrics /ops/organisation-deletion/*
 	handle @api {
 		reverse_proxy {$SOTTO_API:127.0.0.1:8080}
 	}

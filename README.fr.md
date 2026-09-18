@@ -115,6 +115,8 @@ sotto share DATABASE_URL --views 3
 sotto share DATABASE_URL --expire 3600   # lifetime in seconds
 ```
 
+Par défaut, un partage autorise une vue et n’expire pas ; le lien cesse de fonctionner après la dernière vue.
+
 Utilisez `--env` pour sélectionner un environnement pour une seule commande sans modifier celui par défaut du projet :
 
 ```sh

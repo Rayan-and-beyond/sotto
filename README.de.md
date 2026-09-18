@@ -115,6 +115,8 @@ sotto share DATABASE_URL --views 3
 sotto share DATABASE_URL --expire 3600   # lifetime in seconds
 ```
 
+Standardmäßig erlaubt eine Freigabe einen Aufruf und hat kein Ablaufdatum; der Link verfällt nach dem letzten Aufruf.
+
 Mit `--env` wählst du eine Umgebung für einen einzelnen Befehl aus, ohne die Standardumgebung des Projekts zu ändern:
 
 ```sh
